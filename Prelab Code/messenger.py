@@ -34,16 +34,47 @@ class Transport:
 
 
 class UnreliableTransport(Transport):
-    pass  # TODO: implement unreliable transport, i.e., messages being lost or delayed
+
+    def __init__(self, in_queue: MessageQueue, out_queue: MessageQueue, r: random.Random):
+        super().__init__(in_queue, out_queue, r)
+        self.r = r
+        self.buffer = []  # list of (deliver_time, msg)
+        self.drop_rate = 0.5  # default drop rate
+        self.min_delay = 0.1  # default min delay in seconds
+        self.max_delay = 0.5  # default max delay in seconds
 
     def set_random_generator(self, r: random.Random):  # use for replayability
-        pass
+        self.r = r 
 
     def set_drop_rate(self, drop_rate: float):
-        pass
+        assert 0.0 <= drop_rate <= 1.0
+        self.drop_rate = drop_rate
 
     def set_delay(self, min_delay: float, max_delay: float):
-        pass
+        assert 0.0 <= min_delay <= max_delay
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+
+    def deliver(self, t: float):
+        # use the time parameter to ensure replayability
+        while not self.in_queue.empty():
+            msg = self.in_queue.get()
+            if self.r.random() < self.drop_rate:
+                print("Dropping message at time {}: {}".format(t, msg))
+                continue  # drop the message
+            delay = self.r.uniform(self.min_delay, self.max_delay)
+            deliver_time = t + delay
+            self.buffer.append((deliver_time, msg))
+        still_buffered = []
+        for deliver_time, msg in self.buffer:
+            if t >= deliver_time:
+                print("Delivering message at time {}: {}".format(t, msg))
+                self.out_queue.put(msg)
+            else:
+                still_buffered.append((deliver_time, msg))
+        self.buffer = still_buffered
+
+
 
 class Messenger:
     def __init__(self, own_id, num_out: int):
