@@ -1,7 +1,8 @@
+
 # coding=utf-8
 import random
 import messenger
-
+import time
 
 
 class Entry:
@@ -45,8 +46,11 @@ class Node:
             "crashed": False,
             "notes": "",
             "num_entries": 0,  # we use this to generate ids for the entries
+            "num_entries_prop" : 0,
         }
         self.r = r
+        self.expected_seq = {i: 1 for i in self.all_servers}
+        self.buffers = {i: {} for i in self.all_servers}
 
     def is_crashed(self):
         return self.status["crashed"]
@@ -97,21 +101,39 @@ class Node:
 
             entry_value = msg_content['entry_value']
             print(f"Coordinator: Received add_entry for '{entry_value}', broadcasting to all nodes")
-
+            
+            self.status['num_entries_prop'] += 1
             for node_id in self.all_servers:
                 self.messenger.send(node_id, messenger.Message({
                     'type': 'propagate',
-                    'entry_value': entry_value
+                    'id' : self.status['num_entries_prop'],
+                    'entry_value': entry_value,
+                    'from' : self.own_id
                 }))
 
         elif msg_type == 'propagate':
             entry_value = msg_content['entry_value']
+            entry_id = msg_content['id']
+            from_id = msg_content['from']
             # Let's hope this is from the coordinator
             # Each node assigns its own ID... what could go wrong?
-            self.status['num_entries'] += 1
-            entry = Entry(self.status['num_entries'], entry_value)
-            self.board.add_entry(entry)
-            print(f"Node {self.own_id}: Added entry ID {self.status['num_entries']} with value '{entry_value}'")
+            #print(entry_id, self.status['num_entries'] + 1)
+            if(entry_id == self.expected_seq[from_id]):
+                self.status['num_entries'] += 1
+                entry = Entry(self.status['num_entries'], entry_value)
+                self.board.add_entry(entry)
+                print(f"Node {self.own_id}: Added entry ID {self.status['num_entries']} with value '{entry_value}'")
+                self.expected_seq[from_id] += 1
+                
+                
+                while self.expected_seq[from_id] in self.buffers[from_id]:
+                    buffered_value = self.buffers[from_id].pop(self.expected_seq[from_id])
+                    self.status['num_entries'] += 1
+                    e = Entry(self.status['num_entries'], buffered_value)
+                    self.board.add_entry(e)
+                    self.expected_seq[from_id] += 1
+            else:
+                    self.buffers[from_id][entry_id] = entry_value
 
     def update(self, t: float):
         """
@@ -121,3 +143,13 @@ class Node:
         for msg in msgs:
             print(f"Node {self.own_id} received message at time {t}: {msg}")
             self.handle_message(msg)
+
+
+
+
+
+
+
+
+
+
