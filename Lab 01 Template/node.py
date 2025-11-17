@@ -46,11 +46,11 @@ class Node:
             "crashed": False,
             "notes": "",
             "num_entries": 0,  # we use this to generate ids for the entries
-            "num_entries_prop" : 0,
+            "num_entries_prop" : 0, #we use this track the last sequence the coordinator (node 0) send
         }
         self.r = r
-        self.expected_seq = {i: 1 for i in self.all_servers}
-        self.buffers = {i: {} for i in self.all_servers}
+        self.expected_seq = {i: 1 for i in self.all_servers} #tracks next expected message id for each node
+        self.buffers = {i: {} for i in self.all_servers} #buffer for out of order messages
 
     def is_crashed(self):
         return self.status["crashed"]
@@ -106,19 +106,18 @@ class Node:
             for node_id in self.all_servers:
                 self.messenger.send(node_id, messenger.Message({
                     'type': 'propagate',
-                    'id' : self.status['num_entries_prop'],
+                    'id' : self.status['num_entries_prop'], #sequence number of message
                     'entry_value': entry_value,
-                    'from' : self.own_id
+                    'from' : self.own_id 
                 }))
 
         elif msg_type == 'propagate':
             entry_value = msg_content['entry_value']
             entry_id = msg_content['id']
             from_id = msg_content['from']
-            # Let's hope this is from the coordinator
-            # Each node assigns its own ID... what could go wrong?
-            #print(entry_id, self.status['num_entries'] + 1)
+
             if(entry_id == self.expected_seq[from_id]):
+                #add entry to board if it's the next expected id
                 self.status['num_entries'] += 1
                 entry = Entry(self.status['num_entries'], entry_value)
                 self.board.add_entry(entry)
@@ -127,13 +126,15 @@ class Node:
                 
                 
                 while self.expected_seq[from_id] in self.buffers[from_id]:
+                    #check if the next expected id's are in the buffer list
                     buffered_value = self.buffers[from_id].pop(self.expected_seq[from_id])
                     self.status['num_entries'] += 1
                     e = Entry(self.status['num_entries'], buffered_value)
                     self.board.add_entry(e)
                     self.expected_seq[from_id] += 1
             else:
-                    self.buffers[from_id][entry_id] = entry_value
+                #buffer out of order entry
+                self.buffers[from_id][entry_id] = entry_value
 
     def update(self, t: float):
         """
