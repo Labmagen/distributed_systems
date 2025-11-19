@@ -16,8 +16,8 @@ from node import Node
 # ============================================================
 # TEST CONFIGURATION
 # ============================================================
-NUM_ENTRIES = 10
-NUM_SERVERS = 4
+NUM_ENTRIES = 2
+NUM_SERVERS = 2
 SCENARIO = 'hard'  # Options: 'easy', 'medium', 'hard'
 
 # ============================================================

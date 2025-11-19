@@ -93,7 +93,7 @@ class UnreliableTransport(Transport):
         for delivery_time, msg in self.buffered_messages:
             if t >= delivery_time:
                 # Time to deliver this message
-                print(f"Delivering message at time {t}: {msg}")
+                #print(f"Delivering message at time {t}: {msg}")
                 self.out_queue.put(msg)
             else:
                 # Not ready yet, keep in buffer
@@ -118,7 +118,7 @@ class Messenger:
     def receive(self) -> List[Message]:
         msgs = []
         while not self.in_queue.empty():
-            print("Messenger {} received message".format(self.own_id))
+            #print("Messenger {} received message".format(self.own_id))
             msgs.append(self.in_queue.get())
         return msgs
 
