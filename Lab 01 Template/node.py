@@ -180,8 +180,6 @@ class Node:
         elif msg_type == 'ack_add_entry':
             entry_value = msg_content['entry_value']
             from_id = msg_content['from']
-
-            new_list = []
             
             if len(self.not_added[from_id]) > 0:
                 for i in range(len(self.not_added[from_id])):
