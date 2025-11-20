@@ -51,9 +51,9 @@ class Node:
         self.r = r
         self.expected_seq = {i: 1 for i in self.all_servers} #tracks next expected message id for each node
         self.buffers = {i: {} for i in self.all_servers} #buffer for out of order messages
-        self.not_acked = {i: [] for i in self.all_servers} #tracks messages that have not been acked yet
-        self.not_added = {i: [] for i in self.all_servers} #tracks add_entry-messages that have not been acked
-        self.addition_received = []
+        self.not_acked = {i: [] for i in self.all_servers} #tracks messages that have not been acked (for coordinator)
+        self.not_added = {i: [] for i in self.all_servers} #tracks add_entry-messages that have not been acked (for all nodes, creating an entry)
+        self.addition_received = [] # track received addition to avoid duplicates (for coordinator)
 
     def is_crashed(self):
         return self.status["crashed"]
@@ -75,7 +75,8 @@ class Node:
             'from': self.own_id
         }
         self.messenger.send(0, messenger.Message(msg))
-        self.not_added[0] += [(msg, 0.0)] #track unacked add_entry messages
+         # Track unacknowledged add_entry messages 
+        self.not_added[0] += [(msg, 0.0)] 
 
     def update_entry(self, entry_id, value):
         pass  # TODO (Optional Task 4): Implement update logic similar to create_entry
@@ -114,9 +115,10 @@ class Node:
                 'entry_value': entry_value,
                 'from': self.own_id
             }
-            print(f"Node {self.own_id}: Sending ack_add_entry to Node {msg_content['from']} for entry '{entry_value}'")
+            #Send ack back to the requester
             self.messenger.send(msg_content['from'], messenger.Message(add_ack_msg))
 
+            #check if add_entry was already received
             if entry_value not in self.addition_received:
                 self.addition_received += [entry_value]
                 #Propagation
@@ -165,12 +167,11 @@ class Node:
                 #buffer out of order entry
                 self.buffers[from_id][entry_id] = entry_value
 
+
         elif msg_type == 'ack':
             acked_id = msg_content['id']
             from_id = msg_content['from']
-
-            new_list = []
-            
+            #remove from not_acked list
             if len(self.not_acked[from_id]) > 0:
                 for i in range(len(self.not_acked[from_id])):
                     if self.not_acked[from_id][i-1][0]['id'] == acked_id:
@@ -180,7 +181,7 @@ class Node:
         elif msg_type == 'ack_add_entry':
             entry_value = msg_content['entry_value']
             from_id = msg_content['from']
-            
+            #remove from not_added list
             if len(self.not_added[from_id]) > 0:
                 for i in range(len(self.not_added[from_id])):
                     if self.not_added[from_id][i-1][0]['entry_value'] == entry_value:
@@ -196,6 +197,7 @@ class Node:
             print(f"Node {self.own_id} received message at time {t}: {msg}")
             self.handle_message(msg, t)
 
+        #Retransmission of add_entry messages
         for node_id in self.not_added:
             for msg in self.not_added[node_id]:
                 if t - msg[1] > 2.0: #retransmit if not acked within 2 seconds
@@ -205,6 +207,7 @@ class Node:
                     msg = (msg[0], t) #update send time
                     self.not_added[node_id].append(msg)
 
+        #Retransmission of unacked messages
         for node_id in self.not_acked:
             for msg in self.not_acked[node_id]:
                 if t - msg[1] > 2.0: #retransmit if not acked within 2 seconds
