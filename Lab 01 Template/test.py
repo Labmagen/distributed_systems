@@ -18,7 +18,7 @@ from node import Node
 # ============================================================
 NUM_ENTRIES = 10
 NUM_SERVERS = 4
-SCENARIO = 'hard'  # Options: 'easy', 'medium', 'hard'
+SCENARIO = 'medium'  # Options: 'easy', 'medium', 'hard'
 
 # ============================================================
 
