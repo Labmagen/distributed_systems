@@ -48,6 +48,10 @@ class Node:
         }
         self.r = r
 
+    #Generate IDs by combining the timestamp with the node ID of the creator-node
+    def generateID(self, t, ID):
+        return str(t) +  " - " +  str(ID)
+
     def is_crashed(self):
         return self.status["crashed"]
 
@@ -55,7 +59,7 @@ class Node:
         ordered_entries = self.board.get_ordered_entries()
         return list(map(lambda entry: entry.to_dict(), ordered_entries))
 
-    def create_entry(self, value):
+    def create_entry(self, value, t):
         """
         Create a new entry with a globally unique ID and propagate it to all other nodes.
 
@@ -65,7 +69,7 @@ class Node:
         # TODO: Generate a globally unique ID
         # For now, we use a simple counter (this won't work in a distributed setting!)
         self.status['num_entries'] += 1
-        entry_id = self.status['num_entries']
+        entry_id = self.generateID(t, self.own_id)
 
         entry = Entry(entry_id, value)
         self.board.add_entry(entry)
@@ -76,6 +80,7 @@ class Node:
         # - What if the request gets lost?
         # - What if the request is delayed?
         # - What if the response gets lost?
+
         
     def update_entry(self, entry_id, value):
         print(f"Node {self.own_id}: tried to update {entry_id} to {value}, but update not implemented.")

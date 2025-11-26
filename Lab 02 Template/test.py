@@ -16,8 +16,8 @@ from node import Node
 # ============================================================
 # TEST CONFIGURATION
 # ============================================================
-NUM_ENTRIES = 10
-NUM_SERVERS = 4
+NUM_ENTRIES = 2
+NUM_SERVERS = 2
 SCENARIO = 'easy'  # Options: 'easy', 'medium', 'hard'
 
 # ============================================================
@@ -109,7 +109,7 @@ if __name__ == "__main__":
 
     for i in range(NUM_ENTRIES):
         for server_id in range(NUM_SERVERS):
-            nodes[server_id].create_entry(f"Server{server_id}_Entry{i}")
+            nodes[server_id].create_entry(f"Server{server_id}_Entry{i}", time.time())
 
     # Run simulation long enough for all messages to be delivered
     # Adjust duration based on scenario (harder scenarios might need more time)
