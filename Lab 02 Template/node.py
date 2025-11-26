@@ -81,6 +81,16 @@ class Node:
         # - What if the request is delayed?
         # - What if the response gets lost?
 
+        prop_msg = {
+            'type' : 'propagate',
+            'entry_id' : entry_id,
+            'from' : self.own_id,
+            'timestamp' : t
+        }
+        
+        for node_id in self.all_servers:
+            self.messenger.send(node_id, messenger.Message(prop_msg))
+
         
     def update_entry(self, entry_id, value):
         print(f"Node {self.own_id}: tried to update {entry_id} to {value}, but update not implemented.")
