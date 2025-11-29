@@ -1,8 +1,7 @@
-
 # coding=utf-8
 import random
 import messenger
-import time
+import uuid
 
 
 class Entry:
@@ -45,15 +44,13 @@ class Node:
         self.status = {
             "crashed": False,
             "notes": "",
-            "num_entries": 0,  # we use this to generate ids for the entries
-            "num_entries_prop" : 0, #we use this track the last sequence the coordinator (node 0) send
+            "num_entries": 0,  # we use this to count entries created by this node
         }
         self.r = r
-        self.expected_seq = {i: 1 for i in self.all_servers} #tracks next expected message id for each node
-        self.buffers = {i: {} for i in self.all_servers} #buffer for out of order messages
-        self.not_acked = {i: [] for i in self.all_servers} #tracks messages that have not been acked (for coordinator)
-        self.not_added = {i: [] for i in self.all_servers} #tracks add_entry-messages that have not been acked (for all nodes, creating an entry)
-        self.addition_received = [] # track received addition to avoid duplicates (for coordinator)
+
+    #Generate IDs by combining the timestamp with the node ID of the creator-node
+    def generateID(self, t, ID):
+        return str(t) +  " - " +  str(ID)
 
     def is_crashed(self):
         return self.status["crashed"]
@@ -62,38 +59,51 @@ class Node:
         ordered_entries = self.board.get_ordered_entries()
         return list(map(lambda entry: entry.to_dict(), ordered_entries))
 
-    def create_entry(self, value):
+    def create_entry(self, value, t):
         """
-        Create a new entry by sending an 'add_entry' request to the coordinator (node 0).
-        The coordinator will handle the rest.
-        """
-        print(f"Node {self.own_id}: Sending 'add_entry' request to coordinator for value: {value}")
+        Create a new entry with a globally unique ID and propagate it to all other nodes.
 
-        msg = {
-            'type': 'add_entry',
-            'entry_value': value,
-            'from': self.own_id
+        In this lab, there is no coordinator. Each node can create entries independently,
+        and must propagate them to all other nodes using a gossip-style protocol.
+        """
+        # TODO: Generate a globally unique ID
+        # For now, we use a simple counter (this won't work in a distributed setting!)
+        self.status['num_entries'] += 1
+        entry_id = self.generateID(t, self.own_id)
+
+        entry = Entry(entry_id, value)
+        self.board.add_entry(entry)
+
+        print(f"Node {self.own_id}: Created entry {entry_id} with value '{value}'")
+
+        # TODO: Propagate the entry to all other servers? Use your solution for lab 1 to send messages between servers reliably
+        # - What if the request gets lost?
+        # - What if the request is delayed?
+        # - What if the response gets lost?
+
+        prop_msg = {
+            'type' : 'propagate',
+            'entry_id' : entry_id,
+            'from' : self.own_id,
+            'timestamp' : t
         }
-        self.messenger.send(0, messenger.Message(msg))
-         # Track unacknowledged add_entry messages 
-        self.not_added[0] += [(msg, 0.0)] 
+        
+        for node_id in self.all_servers:
+            self.messenger.send(node_id, messenger.Message(prop_msg))
 
+        
     def update_entry(self, entry_id, value):
-        pass  # TODO (Optional Task 4): Implement update logic similar to create_entry
+        print(f"Node {self.own_id}: tried to update {entry_id} to {value}, but update not implemented.")
+        # TODO (Optional): Implement modify operation with conflict resolution
 
     def delete_entry(self, entry_id):
-        pass  # TODO (Optional Task 4): Implement delete logic similar to create_entry
+        print(f"Node {self.own_id}: tried to delete {entry_id}, but delete not implemented.")
+        # TODO (Optional): Implement delete operation with conflict resolution
 
-    def handle_message(self, message, t):
+    def handle_message(self, message):
         """
-        Handle incoming messages for the coordinator pattern.
-
-        We provide a basic implementation:
-        - If a node wants to add a new entry, it sends an 'add_entry' message to the coordinator
-        - The coordinator propagates it to all servers (including itself)
-        - If a node receives a 'propagate' message, it adds the entry to the board
-
-        Note: This implementation has some issues!
+        Handle incoming messages from other nodes.
+        # TODO: Implement message handling logic, use your solution for lab 1 to send messages between servers reliably
         """
         msg_content = message.get_content()
 
@@ -103,90 +113,11 @@ class Node:
 
         msg_type = msg_content['type']
 
-        if msg_type == 'add_entry':
-            # Only coordinator should receive this
-            assert self.own_id == 0, "Only coordinator (node 0) should receive 'add_entry' messages"
+        if msg_type == 'propagate':
+            print(f"Node {self.own_id}: Received propagate message: {msg_content}")
+            pass
+        
 
-            entry_value = msg_content['entry_value']
-            print(f"Coordinator: Received add_entry for '{entry_value}', broadcasting to all nodes")
-            
-            add_ack_msg = {
-                'type': 'ack_add_entry',
-                'entry_value': entry_value,
-                'from': self.own_id
-            }
-            #Send ack back to the requester
-            self.messenger.send(msg_content['from'], messenger.Message(add_ack_msg))
-
-            #check if add_entry was already received
-            if entry_value not in self.addition_received:
-                self.addition_received += [entry_value]
-                #Propagation
-                self.status['num_entries_prop'] += 1
-                for node_id in self.all_servers:
-                    msg = {
-                        'type': 'propagate',
-                        'id' : self.status['num_entries_prop'], #sequence number of message
-                        'entry_value': entry_value,
-                        'from' : self.own_id 
-                    }
-                    self.messenger.send(node_id, messenger.Message(msg))
-                    self.not_acked[node_id] += [(msg, t)] #track unacked messages
-
-        elif msg_type == 'propagate':
-            entry_value = msg_content['entry_value']
-            entry_id = msg_content['id']
-            from_id = msg_content['from']
-
-            # Send acknowledgment back to the sender
-            ack_msg = {
-                'type': 'ack',
-                'id': entry_id,
-                'from': self.own_id
-            }
-            self.messenger.send(from_id, messenger.Message(ack_msg))
-
-            if(entry_id == self.expected_seq[from_id]):
-                #add entry to board if it's the next expected id
-                self.status['num_entries'] += 1
-                entry = Entry(self.status['num_entries'], entry_value)
-                self.board.add_entry(entry)
-                print(f"Node {self.own_id}: Added entry ID {self.status['num_entries']} with value '{entry_value}'")
-                self.expected_seq[from_id] += 1
-                
-                
-                while self.expected_seq[from_id] in self.buffers[from_id]:
-                    #check if the next expected id's are in the buffer list
-                    buffered_value = self.buffers[from_id].pop(self.expected_seq[from_id])
-                    self.status['num_entries'] += 1
-                    e = Entry(self.status['num_entries'], buffered_value)
-                    self.board.add_entry(e)
-                    self.expected_seq[from_id] += 1
-            
-            else:
-                #buffer out of order entry
-                self.buffers[from_id][entry_id] = entry_value
-
-
-        elif msg_type == 'ack':
-            acked_id = msg_content['id']
-            from_id = msg_content['from']
-            #remove from not_acked list
-            if len(self.not_acked[from_id]) > 0:
-                for i in range(len(self.not_acked[from_id])):
-                    if self.not_acked[from_id][i-1][0]['id'] == acked_id:
-                        print(f"Node {self.own_id}: Received ack from Node {from_id} for message ID {acked_id}")
-                        del self.not_acked[from_id][i-1]
-
-        elif msg_type == 'ack_add_entry':
-            entry_value = msg_content['entry_value']
-            from_id = msg_content['from']
-            #remove from not_added list
-            if len(self.not_added[from_id]) > 0:
-                for i in range(len(self.not_added[from_id])):
-                    if self.not_added[from_id][i-1][0]['entry_value'] == entry_value:
-                        print(f"Node {self.own_id}: Received ack from Node {from_id} for add_entry '{entry_value}'")
-                        del self.not_added[from_id][i-1]
 
     def update(self, t: float):
         """
@@ -194,37 +125,4 @@ class Node:
         """
         msgs = self.messenger.receive()
         for msg in msgs:
-            print(f"Node {self.own_id} received message at time {t}: {msg}")
-            self.handle_message(msg, t)
-
-        #Retransmission of add_entry messages
-        for node_id in self.not_added:
-            for msg in self.not_added[node_id]:
-                if t - msg[1] > 2.0: #retransmit if not acked within 2 seconds
-                    print(f"Node {self.own_id}: Retransmitting add_entry message to Node {node_id}")
-                    self.messenger.send(node_id, messenger.Message(msg[0]))
-                    self.not_added[node_id].remove(msg)
-                    msg = (msg[0], t) #update send time
-                    self.not_added[node_id].append(msg)
-
-        #Retransmission of unacked messages
-        for node_id in self.not_acked:
-            for msg in self.not_acked[node_id]:
-                if t - msg[1] > 2.0: #retransmit if not acked within 2 seconds
-                    print(f"Node {self.own_id}: Retransmitting message ID {msg[0]['id']} to Node {node_id}")
-                    self.messenger.send(node_id, messenger.Message(msg[0]))
-                    self.not_acked[node_id].remove(msg)
-                    msg = (msg[0], t) #update send time
-                    self.not_acked[node_id].append(msg)
-
-            
-
-
-
-
-
-
-
-
-
-
+            self.handle_message(msg)
