@@ -62,7 +62,7 @@ class Node:
         ordered_entries = self.board.get_ordered_entries()
         return list(map(lambda entry: entry.to_dict(), ordered_entries))
 
-    def create_entry(self, value, time):
+    def create_entry(self, value):
         """
         Create a new entry by sending an 'add_entry' request to the coordinator (node 0).
         The coordinator will handle the rest.
@@ -72,8 +72,7 @@ class Node:
         msg = {
             'type': 'add_entry',
             'entry_value': value,
-            'from': self.own_id,
-            'time': time
+            'from': self.own_id
         }
         self.messenger.send(0, messenger.Message(msg))
          # Track unacknowledged add_entry messages 
@@ -105,6 +104,9 @@ class Node:
         msg_type = msg_content['type']
 
         if msg_type == 'add_entry':
+            # Only coordinator should receive this
+            assert self.own_id == 0, "Only coordinator (node 0) should receive 'add_entry' messages"
+
             entry_value = msg_content['entry_value']
             print(f"Coordinator: Received add_entry for '{entry_value}', broadcasting to all nodes")
             
