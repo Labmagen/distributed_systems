@@ -94,8 +94,10 @@ class Node:
             'timestamp' : t
         }
         
+        print("Message send\n")
         self.messenger.send(self.own_id, messenger.Message(msg))
-
+        self.not_added[self.own_id] += [(msg, 0.0)] 
+        print("Message send over\n")
         
     def update_entry(self, entry_id, value):
         print(f"Node {self.own_id}: tried to update {entry_id} to {value}, but update not implemented.")
