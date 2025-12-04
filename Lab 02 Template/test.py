@@ -10,55 +10,42 @@ Modify the parameters below to test different scenarios:
 
 import random
 import time
-from messenger import Message, Messenger, Transport, UnreliableTransport
+from messenger import Messenger, Transport, UnreliableTransport
 from node import Node
 
-# ============================================================
-# TEST CONFIGURATION
-# ============================================================
-NUM_ENTRIES = 2
-NUM_SERVERS = 2
-SCENARIO = 'easy'  # Options: 'easy', 'medium', 'hard'
+NUM_ENTRIES = 10
+NUM_SERVERS = 4
+SCENARIO = "hard"  # "easy", "medium", "hard"
+RANDOM_SEED = 42
 
-# ============================================================
 
+#create transports
 def create_transports(nodes, scenario, r):
-    """
-    Create transports between nodes based on the scenario.
-
-    Scenarios:
-    - 'easy': No delays, no packet loss (reliable)
-    - 'medium': Delays (0.5-1.5s), no packet loss
-    - 'hard': Delays (0.5-1.5s) + 10% packet loss
-    """
     transports = {}
-    num_nodes = len(nodes)
 
-    for from_id in range(num_nodes):
-        for to_id in range(num_nodes):
-            if scenario == 'easy':
-                # Reliable transport
-                transport = Transport(
-                    nodes[from_id].messenger.out_queues[to_id],
-                    nodes[to_id].messenger.in_queue,
+    for n1 in nodes:
+        for n2 in nodes:
+
+            if scenario == "easy":
+                t = Transport(
+                    n1.messenger.out_queues[n2.own_id],
+                    n2.messenger.in_queue,
                     r
                 )
             else:
-                # Unreliable transport
-                transport = UnreliableTransport(
-                    nodes[from_id].messenger.out_queues[to_id],
-                    nodes[to_id].messenger.in_queue,
+                t = UnreliableTransport(
+                    n1.messenger.out_queues[n2.own_id],
+                    n2.messenger.in_queue,
                     r
                 )
+                if scenario == "medium":
+                    t.set_delay(0.5, 1.5)
+                    t.set_drop_rate(0.0)
+                elif scenario == "hard":
+                    t.set_delay(0.5, 1.5)
+                    t.set_drop_rate(0.1)
 
-                if scenario == 'medium':
-                    transport.set_delay(0.5, 1.5)  # Delays only
-                    transport.set_drop_rate(0.0)   # No packet loss
-                elif scenario == 'hard':
-                    transport.set_delay(0.5, 1.5)  # Delays
-                    transport.set_drop_rate(0.1)   # 10% packet loss
-
-            transports[(from_id, to_id)] = transport
+            transports[(n1.own_id, n2.own_id)] = t
 
     return transports
 
@@ -72,22 +59,21 @@ def run_simulation(nodes, transports, duration_seconds=5.0, time_step=0.01):
     iterations = int(duration_seconds / time_step)
 
     for _ in range(iterations):
-        # Deliver messages via all transports
-        for transport in transports.values():
-            transport.deliver(t)
+        # deliver messages
+        for tport in transports.values():
+            tport.deliver(t)
 
-        # Update all non-crashed nodes
-        for node in nodes:
-            if not node.is_crashed():
-                node.update(t)
+        # update nodes
+        for n in nodes:
+            if not n.is_crashed():
+                n.update(t)
 
         t += time_step
-        time.sleep(0.001)
-        
-    return t
+        time.sleep(0.0001)
 
 
-if __name__ == "__main__":
+#basic test from lab 1
+def test_baseline():
     print("=" * 60)
     print(f"Lab 1 Test - Scenario: {SCENARIO}")
     print("=" * 60)
@@ -151,34 +137,94 @@ if __name__ == "__main__":
 
 
 
-"""
-Task 3a: Test network partition and recovery.
+#Partition Recovery Test (3a)
+def test_partition_recovery():
+    print("=" * 60)
+    print("TEST 3a — Network partition + healing")
+    print("=" * 60)
 
-TODO: Implement this test!
+    r = random.Random(RANDOM_SEED)
+    nodes = [Node(Messenger(i, NUM_SERVERS), i, NUM_SERVERS, r) for i in range(NUM_SERVERS)]
 
-Steps:
-1. Setup nodes and transports with partitioned scenario
-2. Create entries in each partition
-3. Run simulation (partitions should stay separate)
-4. Verify that nodes within each partition are consistent, but different across partitions
-5. Heal the partition
-6. Continue simulation
-7. Check that all nodes eventually have the same entries
-"""
+    # Split in half
+    half = NUM_SERVERS // 2
+    P1 = nodes[:half]
+    P2 = nodes[half:]
+
+    print(" Network partition: No cross communication!")
+    transports = {}
+    for group in (P1, P2):
+        for n1 in group:
+            for n2 in group:
+                transports[(n1.own_id, n2.own_id)] = Transport(
+                    n1.messenger.out_queues[n2.own_id],
+                    n2.messenger.in_queue,
+                    r
+                )
+
+    # Writes in both partitions
+    for i, node in enumerate(P1):
+        node.create_entry(f"Server{node.own_id}_Entry{i}", time.time())
+    for i, node in enumerate(P2):
+        node.create_entry(f"Server{node.own_id}_Entry{i}", time.time())
+
+    run_simulation(nodes, transports, duration_seconds=4.0)
+
+    print("\nChecking partitions diverged...")
+    assert P1[0].get_entries() != P2[0].get_entries()
+    print(" Partitions diverged successfully")
+
+    # Heal the network
+    print(" Healing network...")
+    transports = create_transports(nodes, SCENARIO, r)
+
+    run_simulation(nodes, transports, duration_seconds=10.0)
+
+    print("\nChecking global consistency...")
+    expected = nodes[0].get_entries()
+    for n in nodes:
+        assert n.get_entries() == expected
+        print(f"Node {n.own_id} entries: {len(expected)}")
+
+    print("SUCCESS: All nodes eventually consistent after partition recovery!")
 
 
-"""
-Task 3a: Test crash and recovery behavior.
+#Lab 2 Task 3 test consistency after crash-recovery
+def test_crash_recovery():
+    print("=" * 60)
+    print("TEST 3b — Crash + Recovery")
+    print("=" * 60)
 
-TODO: Implement this test!
+    r = random.Random(RANDOM_SEED)
+    nodes = [Node(Messenger(i, NUM_SERVERS), i, NUM_SERVERS, r) for i in range(NUM_SERVERS)]
+    transports = create_transports(nodes, SCENARIO, r)
 
-Steps:
-1. Setup nodes and transports
-2. Crash one node (set node.status["crashed"] = True)
-3. Create entries on non-crashed nodes
-4. Run simulation (crashed node should not receive updates)
-5. Recover the crashed node (set node.status["crashed"] = False)
-6. Continue simulation (node should catch up)
-7. Check that all nodes eventually have the same entries
-"""
+    crashed = nodes[0]
+    crashed.status["crashed"] = True
+    print(f"Node {crashed.own_id} crashed")
 
+    # Writes while one node is offline
+    for i in range(NUM_ENTRIES):
+        for n in nodes[1:]:
+            n.create_entry(f"Alive_E{i}", time.time())
+
+    run_simulation(nodes, transports, duration_seconds=4.0)
+
+    # Recovery
+    print(f" Node {crashed.own_id} recovers!")
+    crashed.status["crashed"] = False
+
+    run_simulation(nodes, transports, duration_seconds=6.0)
+
+    # Check consistency
+    expected = nodes[1].get_entries()
+    for n in nodes:
+        assert n.get_entries() == expected
+    print("SUCCESS: Crashed node caught up!")
+
+
+# run tests
+if __name__ == "__main__":
+    test_baseline()
+    test_partition_recovery()
+    test_crash_recovery()
